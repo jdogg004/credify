@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE
+  PRO
+  BUSINESS
+}
+
+enum MemberRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum JobStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum CalendarProvider {
+  GOOGLE
+  NOTION
+}
+
+model User {
+  id          String   @id @default(cuid())
+  clerkId     String   @unique
+  email       String
+  firstName   String?
+  lastName    String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspaces  WorkspaceMember[]
+  metadataJobs MetadataJob[]
+  reminders   Reminder[]
+  calendarConnections CalendarConnection[]
+}
+
+model Workspace {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  plan             Plan     @default(FREE)
+  credits          Int      @default(25)
+  stripeCustomerId String?
+  stripeSubId      String?
+  stripePriceId    String?
+  subStatus        String?
+  referralCode     String   @unique
+  referredBy       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  members     WorkspaceMember[]
+  invites     WorkspaceInvite[]
+  metadataJobs MetadataJob[]
+  reminders   Reminder[]
+  calendarConnections CalendarConnection[]
+}
+
+model WorkspaceMember {
+  id          String     @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        MemberRole @default(VIEWER)
+  createdAt   DateTime   @default(now())
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model WorkspaceInvite {
+  id          String     @id @default(cuid())
+  workspaceId String
+  email       String
+  role        MemberRole @default(EDITOR)
+  token       String     @unique @default(cuid())
+  expiresAt   DateTime
+  createdAt   DateTime   @default(now())
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+}
+
+model MetadataJob {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  userId          String
+  rawInput        String    @db.Text
+  cleanedText     String?   @db.Text
+  issuesJson      String?   @db.Text
+  suggestionsJson String?   @db.Text
+  confidenceNote  String?
+  status          JobStatus @default(PROCESSING)
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Reminder {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  title       String
+  notes       String?   @db.Text
+  dueAt       DateTime?
+  completed   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CalendarConnection {
+  id           String           @id @default(cuid())
+  workspaceId  String
+  userId       String
+  provider     CalendarProvider
+  accessToken  String           @db.Text
+  refreshToken String?          @db.Text
+  tokenExpiry  DateTime?
+  notionDbId   String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, provider])
+}
