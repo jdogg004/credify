@@ -14,8 +14,12 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { rawInput } = await req.json();
+  const { rawInput, title, artist, isrc, upc, iswc, referenceCredits } = await req.json();
   if (!rawInput?.trim()) return NextResponse.json({ error: "Input required" }, { status: 400 });
+
+  const credits: { role: string; name: string }[] = Array.isArray(referenceCredits)
+    ? referenceCredits.filter((c: any) => c?.role?.trim() && c?.name?.trim())
+    : [];
 
   const user = await prisma.user.findUnique({ where: { clerkId: userId } });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -32,7 +36,18 @@ export async function POST(req: NextRequest) {
   }
 
   const job = await prisma.metadataJob.create({
-    data: { workspaceId: workspace.id, userId: user.id, rawInput, status: "PROCESSING" },
+    data: {
+      workspaceId: workspace.id,
+      userId: user.id,
+      rawInput,
+      title: title?.trim() || null,
+      artist: artist?.trim() || null,
+      isrc: isrc?.trim() || null,
+      upc: upc?.trim() || null,
+      iswc: iswc?.trim() || null,
+      referenceCreditsJson: credits.length ? JSON.stringify(credits) : null,
+      status: "PROCESSING",
+    },
   });
 
   await prisma.workspace.update({ where: { id: workspace.id }, data: { credits: { decrement: 1 } } });
@@ -55,13 +70,19 @@ export async function POST(req: NextRequest) {
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+    const referenceBlock = credits.length
+      ? `\n\nReference credits (ground truth, supplied directly by the user — these are the correct spellings/roles):\n${credits
+          .map((c) => `- ${c.role}: ${c.name}`)
+          .join("\n")}\n\nFor every name in the raw credits below, check it against this reference list. If a name in the raw credits is a close match to a reference name but spelled or formatted differently (e.g. "Jonah" vs "Jonathan"), this IS an issue — report it explicitly with both spellings and which one is correct per the reference. Do not silently "fix" it without flagging it as an issue.`
+      : `\n\nNo reference credits were supplied. You have no external ground truth (no Spotify/DSP database access, no contract data) — you can only catch internal inconsistencies within the raw text itself (e.g. the same person spelled two different ways in different lines). You CANNOT verify whether a name is the "real" correct spelling for that person. Do not claim a name is correct just because it looks plausible or internally consistent — only flag what you can actually detect from the text alone, and say so in confidenceNote.`;
+
     const message = await client.messages.create({
       model: "claude-opus-4-6",
       max_tokens: 2048,
       messages: [
         {
           role: "user",
-          content: `You are an expert A&R music metadata specialist. Clean and correct the following raw credit text.
+          content: `You are an expert A&R music metadata specialist. Clean and correct the following raw credit text.${referenceBlock}
 
 Return ONLY valid JSON (no markdown) with this shape:
 {
@@ -70,6 +91,8 @@ Return ONLY valid JSON (no markdown) with this shape:
   "suggestions": ["..."],
   "confidenceNote": "..."
 }
+
+confidenceNote must be honest about what was actually checked. If no reference credits were given, do not say things like "no issues found" with high confidence about name spelling — only claim confidence about formatting/role-expansion issues that don't require outside verification.
 
 Raw credits:
 ${rawInput}`,

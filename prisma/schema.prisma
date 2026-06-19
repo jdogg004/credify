@@ -96,17 +96,24 @@ model WorkspaceInvite {
 }
 
 model MetadataJob {
-  id              String    @id @default(cuid())
-  workspaceId     String
-  userId          String
-  rawInput        String    @db.Text
-  cleanedText     String?   @db.Text
-  issuesJson      String?   @db.Text
-  suggestionsJson String?   @db.Text
-  confidenceNote  String?
-  status          JobStatus @default(PROCESSING)
-  createdAt       DateTime  @default(now())
-  completedAt     DateTime?
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  userId               String
+  rawInput             String    @db.Text
+  cleanedText          String?   @db.Text
+  issuesJson           String?   @db.Text
+  suggestionsJson      String?   @db.Text
+  confidenceNote       String?
+  title                String?
+  artist               String?
+  isrc                 String?
+  upc                  String?
+  iswc                 String?
+  referenceCreditsJson String?   @db.Text
+  availabilityJson     String?   @db.Text
+  status               JobStatus @default(PROCESSING)
+  createdAt            DateTime  @default(now())
+  completedAt          DateTime?
 
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
